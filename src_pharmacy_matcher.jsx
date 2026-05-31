@@ -222,7 +222,7 @@ export default function PharmacyMatcher() {
         province: row.province || row["المحافظة"] || "",
         district: row.district || row["المركز/الحي"] || "",
         distributor: row.distributor || row["الموزع"] || `Uploaded (${file.name})`,
-      )).filter(p => p.name);
+      })).filter(p => p.name);  
 
       if (pharmacies.length === 0) {
         alert(`No valid pharmacy records found in ${file.name}`);
@@ -296,20 +296,19 @@ Records:
 ${batch.map((p, i) => `[${i}] Distributor: ${p.distributor} | Name: ${p.name} | Address: ${p.address || p.district || p.province}`).join("\n")}`;
 
     // Target the proxy endpoint to avoid client-side CORS errors and secure your API keys
-    const response = await fetch("/.netlify/functions/match-pharmacies", {
-      method: "POST",
-      headers: { 
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "claude-3-sonnet-20240229",
-        max_tokens: 1000,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 1000,
+    tools: [{ type: "web_search_20250305", name: "web_search" }],
+    messages: [{ role: "user", content: prompt }],
+  }),
+});
     
     const data = await response.json();
-    const text = data.content?.[0]?.text || "";
+    onst text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
     const clean = text.replace(/```json|```/g, "").trim();
     try {
       return JSON.parse(clean);
