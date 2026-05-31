@@ -1,4 +1,9 @@
 {
+  "homepage": "https://psandyy.github.io/Matching",
+  "name": "pharmacy-matcher",
+  ...
+}
+{
   "name": "pharmacy-matcher",
   "version": "1.0.0",
   "private": true,
