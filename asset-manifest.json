@@ -1,10 +1,10 @@
 {
   "files": {
-    "main.js": "/Matching/static/js/main.8c81f3e3.js",
+    "main.js": "/Matching/static/js/main.58c15764.js",
     "index.html": "/Matching/index.html",
-    "main.8c81f3e3.js.map": "/Matching/static/js/main.8c81f3e3.js.map"
+    "main.58c15764.js.map": "/Matching/static/js/main.58c15764.js.map"
   },
   "entrypoints": [
-    "static/js/main.8c81f3e3.js"
+    "static/js/main.58c15764.js"
   ]
 }
