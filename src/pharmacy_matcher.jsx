@@ -195,6 +195,8 @@ export default function PharmacyMatcher() {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem("anthropicApiKey") || "");
   const [manualSearch, setManualSearch] = useState("");
   const [manualSelected, setManualSelected] = useState([]); // array of {batchIndex, ph}
+  const [manualProvince, setManualProvince] = useState("all");
+  const [manualDistrict, setManualDistrict] = useState("all");
   const abortRef = useRef(false);
   const nextMasterCode = useRef(1000);
   const fileInputRef = useRef(null);
@@ -483,13 +485,42 @@ ${batch.map((p, i) => `[${i}] Distributor: ${p.distributor} | Name: ${p.name} | 
   // ── Manual matching helpers ─────────────────────────────────────────────
   const groupedUids = new Set(masterGroups.flatMap(g => g.entries.map(e => e._uid)));
 
-  const manualRecords = getCombinedDataWithIds().filter(p => {
-    if (groupedUids.has(p._uid)) return false;
+  const ungroupedRecords = getCombinedDataWithIds().filter(p => !groupedUids.has(p._uid));
+
+  // Distinct provinces/districts available among ungrouped records (for filter dropdowns)
+  const availableProvinces = [...new Set(ungroupedRecords.map(p => p.province || "").filter(Boolean))].sort();
+  const availableDistricts = [...new Set(
+    ungroupedRecords
+      .filter(p => manualProvince === "all" || (p.province || "") === manualProvince)
+      .map(p => p.district || "")
+      .filter(Boolean)
+  )].sort();
+
+  const manualRecords = ungroupedRecords.filter(p => {
+    if (manualProvince !== "all" && (p.province || "") !== manualProvince) return false;
+    if (manualDistrict !== "all" && (p.district || "") !== manualDistrict) return false;
     if (!manualSearch.trim()) return true;
     const term = manualSearch.trim().toLowerCase();
     return [p.name, p.address, p.district, p.province, p.orig_code]
       .some(v => String(v || "").toLowerCase().includes(term));
   });
+
+  // Group records by Province → District, sorted, so nearby pharmacies sit together
+  const manualGroupedByTerritory = (() => {
+    const map = new Map();
+    for (const p of manualRecords) {
+      const province = p.province || "—";
+      const district = p.district || "—";
+      const key = `${province}|||${district}`;
+      if (!map.has(key)) map.set(key, { province, district, records: [] });
+      map.get(key).records.push(p);
+    }
+    return [...map.values()].sort((a, b) => {
+      const pa = a.province.localeCompare(b.province, "ar");
+      if (pa !== 0) return pa;
+      return a.district.localeCompare(b.district, "ar");
+    });
+  })();
 
   const toggleManualSelect = (ph) => {
     setManualSelected(prev => {
@@ -807,6 +838,29 @@ ${batch.map((p, i) => `[${i}] Distributor: ${p.distributor} | Name: ${p.name} | 
                   />
                 </div>
 
+                <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+                  <div className="input-group" style={{ flex: 1, minWidth: 160 }}>
+                    <label>Province</label>
+                    <select
+                      value={manualProvince}
+                      onChange={e => { setManualProvince(e.target.value); setManualDistrict("all"); }}
+                    >
+                      <option value="all">All Provinces</option>
+                      {availableProvinces.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div className="input-group" style={{ flex: 1, minWidth: 160 }}>
+                    <label>District</label>
+                    <select
+                      value={manualDistrict}
+                      onChange={e => setManualDistrict(e.target.value)}
+                    >
+                      <option value="all">All Districts</option>
+                      {availableDistricts.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                </div>
+
                 {manualSelected.length > 0 && (
                   <div className="master-group confirmed" style={{ marginBottom: 14 }}>
                     <div className="master-header">
@@ -845,48 +899,59 @@ ${batch.map((p, i) => `[${i}] Distributor: ${p.distributor} | Name: ${p.name} | 
                 {manualRecords.length === 0 ? (
                   <div className="empty-state">
                     <div className="icon">✅</div>
-                    <p>{manualSearch ? "No records match your search" : "All records have been grouped"}</p>
+                    <p>{manualSearch || manualProvince !== "all" || manualDistrict !== "all" ? "No records match your filters" : "All records have been grouped"}</p>
                   </div>
                 ) : (
-                  <div className="master-group pending">
-                    <div className="master-body">
-                      {manualRecords.map((e) => {
-                        const isSelected = manualSelected.some(x => x._uid === e._uid);
-                        return (
-                          <div key={e._uid} className="pharmacy-row" style={isSelected ? { background: "rgba(0,200,150,0.08)" } : undefined}>
-                            <div className={`dist-tag ${e.distributor === "El-Masreya" ? "masreya" : "purex"}`}>
-                              {e.distributor === "El-Masreya" ? "MASREYA" : e.distributor === "Purex" ? "PUREX" : "UPLOADED"}
+                  manualGroupedByTerritory.map(group => (
+                    <div key={`${group.province}|||${group.district}`} className="master-group pending" style={{ marginBottom: 14 }}>
+                      <div className="master-header">
+                        <div className="master-code">🗺</div>
+                        <div>
+                          <div className="master-name">{group.district}</div>
+                          <div className="master-meta">{group.province}</div>
+                        </div>
+                        <div className="master-badges">
+                          <span className="badge badge-status-pending">{group.records.length} record{group.records.length > 1 ? "s" : ""}</span>
+                        </div>
+                      </div>
+                      <div className="master-body">
+                        {group.records.map((e) => {
+                          const isSelected = manualSelected.some(x => x._uid === e._uid);
+                          return (
+                            <div key={e._uid} className="pharmacy-row" style={isSelected ? { background: "rgba(0,200,150,0.08)" } : undefined}>
+                              <div className={`dist-tag ${e.distributor === "El-Masreya" ? "masreya" : "purex"}`}>
+                                {e.distributor === "El-Masreya" ? "MASREYA" : e.distributor === "Purex" ? "PUREX" : "UPLOADED"}
+                              </div>
+                              <div className="pharmacy-info">
+                                <div className="pharmacy-orig-name">{e.name}</div>
+                                <div className="pharmacy-orig-code">Code: {e.orig_code}</div>
+                                {e.address && <div className="pharmacy-addr">📍 {e.address}</div>}
+                                <a className="maps-link" href={mapsUrl(e)} target="_blank" rel="noopener noreferrer">
+                                  🗺 Verify on Google Maps ↗
+                                </a>
+                              </div>
+                              <div className="row-actions">
+                                <button
+                                  className={isSelected ? "btn btn-primary" : "btn btn-secondary"}
+                                  style={{ width: "auto", padding: "6px 12px" }}
+                                  onClick={() => toggleManualSelect(e)}
+                                >
+                                  {isSelected ? "✓ Selected" : "Select"}
+                                </button>
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ width: "auto", padding: "6px 12px" }}
+                                  onClick={() => addSingleAsGroup(e)}
+                                >
+                                  Add as single
+                                </button>
+                              </div>
                             </div>
-                            <div className="pharmacy-info">
-                              <div className="pharmacy-orig-name">{e.name}</div>
-                              <div className="pharmacy-orig-code">Code: {e.orig_code}</div>
-                              {e.address && <div className="pharmacy-addr">📍 {e.address}</div>}
-                              {e.district && <div className="pharmacy-addr">🗺 {e.district}{e.province ? ` · ${e.province}` : ""}</div>}
-                              <a className="maps-link" href={mapsUrl(e)} target="_blank" rel="noopener noreferrer">
-                                🗺 Verify on Google Maps ↗
-                              </a>
-                            </div>
-                            <div className="row-actions">
-                              <button
-                                className={isSelected ? "btn btn-primary" : "btn btn-secondary"}
-                                style={{ width: "auto", padding: "6px 12px" }}
-                                onClick={() => toggleManualSelect(e)}
-                              >
-                                {isSelected ? "✓ Selected" : "Select"}
-                              </button>
-                              <button
-                                className="btn btn-secondary"
-                                style={{ width: "auto", padding: "6px 12px" }}
-                                onClick={() => addSingleAsGroup(e)}
-                              >
-                                Add as single
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  ))
                 )}
               </>
             )}
